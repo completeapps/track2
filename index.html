@@ -18,14 +18,44 @@
 
     h1 {
       color: #fff;
-      text-align: center;
-      margin-bottom: 4px;
+      margin: 0;
       text-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
     .tagline {
-      text-align: center;
       color: rgba(255,255,255,0.9);
-      margin-bottom: 24px;
+      margin: 4px 0 0;
+      font-size: 14px;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hamburger {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: none;
+      background: rgba(15,23,42,0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+    }
+    .hamburger span {
+      width: 20px;
+      height: 2px;
+      background: #e5e7eb;
+      border-radius: 999px;
     }
 
     .card {
@@ -215,15 +245,43 @@
       max-height: 320px;
     }
 
+    /* Slide-out settings panel */
+    .settings {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 320px;
+      max-width: 100%;
+      height: 100%;
+      background: #f9fafb;
+      box-shadow: -8px 0 24px rgba(15,23,42,0.25);
+      transform: translateX(100%);
+      transition: transform 0.25s ease-out;
+      z-index: 50;
+    }
+    .settings.open {
+      transform: translateX(0);
+    }
+    .settings-inner {
+      padding: 20px;
+      height: 100%;
+      overflow-y: auto;
+    }
+    .settings h2 {
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+
     @media (max-width: 640px) {
       .card { padding: 18px; }
       .user-bar { flex-direction: column; gap: 8px; align-items: flex-start; }
       .btn-row { flex-direction: column; }
       .btn-google { justify-content: center; }
+      .top-bar { flex-direction: column; align-items: flex-start; gap: 10px; }
     }
   </style>
 
-  <!-- Firebase v10+ modules -->
+  <!-- Firebase v10+ modules and Chart.js -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
     import {
@@ -281,9 +339,20 @@
     const entriesList  = document.getElementById('entriesList');
     const statsContent = document.getElementById('statsContent');
     const chartCanvas  = document.getElementById('progressChart');
+    const currentGoalEl = document.getElementById('currentGoal');
+
+    const menuBtn       = document.getElementById('menuBtn');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const closeSettings = document.getElementById('closeSettingsBtn');
+    const addEventBtn   = document.getElementById('addEventBtn');
+    const eventList     = document.getElementById('eventList');
+    const newEventName  = document.getElementById('newEventName');
+    const newEventGoal  = document.getElementById('newEventGoal');
 
     let entries = [];
     let entriesRef = null;
+    let events = [];
+    let eventsRef = null;
     let chart = null;
 
     dateInput.value = new Date().toISOString().split('T')[0];
@@ -293,7 +362,17 @@
       syncStatus.style.background = color;
     }
 
-    // Email/password buttons
+    // Settings panel open/close
+    menuBtn.addEventListener('click', () => {
+      settingsPanel.classList.remove('hidden');
+      settingsPanel.classList.add('open');
+    });
+    closeSettings.addEventListener('click', () => {
+      settingsPanel.classList.remove('open');
+      setTimeout(() => settingsPanel.classList.add('hidden'), 200);
+    });
+
+    // Email/password auth
     btnSignUp.addEventListener('click', async () => {
       authError.textContent = '';
       try {
@@ -312,11 +391,11 @@
       }
     });
 
-    // Google sign-in button
+    // Google auth
     btnGoogle.addEventListener('click', async () => {
       authError.textContent = '';
       try {
-        await signInWithPopup(auth, googleProvider);  // opens Google popup [web:61]
+        await signInWithPopup(auth, googleProvider);   // [web:61]
       } catch (err) {
         authError.textContent = err.message;
       }
@@ -335,19 +414,34 @@
         setSync('Syncing…', '#facc15');
 
         entriesRef = ref(db, `users/${user.uid}/entries`);
+        eventsRef  = ref(db, `users/${user.uid}/events`);
+
         onValue(entriesRef, (snapshot) => {
           const data = snapshot.val();
           entries = data ? Object.values(data) : [];
           setSync('Synced', '#22c55e');
           renderEntries();
         });
+
+        onValue(eventsRef, (snapshot) => {
+          const data = snapshot.val();
+          events = data ? Object.values(data) : [];
+          renderEventsUI();
+        });
       } else {
         appScreen.classList.add('hidden');
         authScreen.classList.remove('hidden');
+        entries = [];
+        events = [];
+        entriesRef = null;
+        eventsRef = null;
+        renderEntries();
+        fillEventSelect();
+        currentGoalEl.textContent = '';
       }
     });
 
-    // Form submit
+    // Entry form
     entryForm.addEventListener('submit', (e) => {
       e.preventDefault();
       if (!entriesRef) return;
@@ -366,6 +460,7 @@
       eventInput.value = '';
       valueInput.value = '';
       notesInput.value = '';
+      currentGoalEl.textContent = '';
     });
 
     function saveEntries() {
@@ -374,6 +469,13 @@
       entries.forEach((e, i) => { obj[i] = e; });
       set(entriesRef, obj);
       setSync('Saving…', '#f97316');
+    }
+
+    function saveEvents() {
+      if (!eventsRef) return;
+      const obj = {};
+      events.forEach((e, i) => { obj[i] = e; });
+      set(eventsRef, obj);
     }
 
     function numeric(val) {
@@ -489,11 +591,88 @@
       renderStats();
       renderChart();
     }
+
+    function fillEventSelect() {
+      const currentVal = eventInput.value;
+      eventInput.innerHTML = '<option value="">Select event</option>';
+      events.forEach(ev => {
+        const opt = document.createElement('option');
+        opt.value = ev.name;
+        opt.textContent = ev.goal ? `${ev.name} (goal: ${ev.goal})` : ev.name;
+        eventInput.appendChild(opt);
+      });
+      const options = Array.from(eventInput.options).map(o => o.value);
+      if (options.includes(currentVal)) {
+        eventInput.value = currentVal;
+      } else {
+        eventInput.value = '';
+        currentGoalEl.textContent = '';
+      }
+    }
+
+    function renderEventsUI() {
+      eventList.innerHTML = '';
+      events.forEach((ev, idx) => {
+        const li = document.createElement('li');
+        li.className = 'entry-item';
+        li.innerHTML = `
+          <div class="entry-main">
+            <div class="entry-heading">${ev.name}</div>
+            <div class="entry-notes">${ev.goal || ''}</div>
+          </div>
+          <button class="btn btn-danger btn-small">Delete</button>
+        `;
+        li.querySelector('button').addEventListener('click', () => {
+          events.splice(idx, 1);
+          saveEvents();
+          renderEventsUI();
+          fillEventSelect();
+        });
+        li.addEventListener('click', (e) => {
+          if (e.target.tagName === 'BUTTON') return;
+          newEventName.value = ev.name;
+          newEventGoal.value = ev.goal || '';
+        });
+        eventList.appendChild(li);
+      });
+      fillEventSelect();
+    }
+
+    addEventBtn.addEventListener('click', () => {
+      const name = newEventName.value.trim();
+      const goal = newEventGoal.value.trim();
+      if (!name) return;
+      const existing = events.find(e => e.name === name);
+      if (existing) {
+        existing.goal = goal;
+      } else {
+        events.push({ name, goal });
+      }
+      saveEvents();
+      renderEventsUI();
+      newEventName.value = '';
+      newEventGoal.value = '';
+    });
+
+    eventInput.addEventListener('change', () => {
+      const evName = eventInput.value;
+      const ev = events.find(e => e.name === evName);
+      currentGoalEl.textContent = ev && ev.goal ? `Goal: ${ev.goal}` : '';
+    });
   </script>
 </head>
 <body>
-  <h1>Track & Jump Tracker</h1>
-  <p class="tagline">Email or Google login • Personal data • Progress charts</p>
+  <div class="top-bar">
+    <div class="top-left">
+      <button id="menuBtn" class="hamburger">
+        <span></span><span></span><span></span>
+      </button>
+      <div>
+        <h1>Track & Jump Tracker</h1>
+        <p class="tagline">Email/Google • Personal data • Progress charts</p>
+      </div>
+    </div>
+  </div>
 
   <!-- AUTH CARD -->
   <div id="authScreen" class="card auth-card">
@@ -540,10 +719,8 @@
           <label for="event">Event</label>
           <select id="event">
             <option value="">Select event</option>
-            <option value="100m">100m (goal: 12.0s)</option>
-            <option value="200m">200m (goal: 25s)</option>
-            <option value="Long Jump">Long Jump</option>
           </select>
+          <div id="currentGoal" class="small-text" style="margin-top:4px;"></div>
         </div>
         <div class="form-group">
           <label for="value">Time / Distance</label>
@@ -569,6 +746,29 @@
       <div class="chart-wrap">
         <canvas id="progressChart"></canvas>
       </div>
+    </div>
+  </div>
+
+  <!-- Settings panel -->
+  <div id="settingsPanel" class="settings hidden">
+    <div class="settings-inner">
+      <h2>⚙️ Events & Goals</h2>
+      <p class="small-text">Add events you do and edit their goals. They show up in the event dropdown.</p>
+
+      <div class="form-group">
+        <label for="newEventName">Event name</label>
+        <input type="text" id="newEventName" placeholder="e.g. 400m, XC 3k">
+      </div>
+      <div class="form-group">
+        <label for="newEventGoal">Goal (optional)</label>
+        <input type="text" id="newEventGoal" placeholder="e.g. 58.0s, 19:00, 5.0m">
+      </div>
+      <button class="btn btn-primary btn-full" id="addEventBtn">Add / Update Event</button>
+
+      <h3 style="margin-top:20px;font-size:16px;">Your events</h3>
+      <ul id="eventList" class="entry-list"></ul>
+
+      <button class="btn btn-outline btn-full" id="closeSettingsBtn" style="margin-top:10px;">Close</button>
     </div>
   </div>
 </body>

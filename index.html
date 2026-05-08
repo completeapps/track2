@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Track Tracker</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+        input, select, button { padding: 8px; font-size: 16px; }
+        ul { list-style: none; padding: 0; }
+        li { border: 1px solid #ddd; margin: 5px 0; padding: 10px; border-radius: 5px; }
+        .stats { background: #f0f0f0; padding: 15px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>My Track & Jump Tracker</h1>
+    <form id="entryForm">
+        <input type="date" id="date" required>
+        <select id="event" required>
+            <option value="">Select Event</option>
+            <option value="100m">100m</option>
+            <option value="200m">200m</option>
+            <option value="Long Jump">Long Jump</option>
+        </select>
+        <input type="text" id="value" placeholder="Time e.g. 13.0s or Distance e.g. 4.5m" required>
+        <textarea id="notes" placeholder="Notes (weather, etc.)"></textarea>
+        <button type="submit">Log Entry</button>
+    </form>
+    <ul id="entries"></ul>
+    <div id="stats" class="stats" style="display:none;"></div>
+
+    <script>
+        const form = document.getElementById('entryForm');
+        const entriesList = document.getElementById('entries');
+        const statsDiv = document.getElementById('stats');
+
+        let entries = JSON.parse(localStorage.getItem('trackEntries')) || [];
+
+        function saveEntries() {
+            localStorage.setItem('trackEntries', JSON.stringify(entries));
+        }
+
+        function renderEntries() {
+            entriesList.innerHTML = '';
+            entries.forEach((entry, index) => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <strong>${entry.date}</strong> - ${entry.event}: ${entry.value} 
+                    <br>${entry.notes || ''} 
+                    <button onclick="deleteEntry(${index})">Delete</button>
+                `;
+                entriesList.appendChild(li);
+            });
+            renderStats();
+        }
+
+        function renderStats() {
+            const pb = {};
+            entries.forEach(e => {
+                if (!pb[e.event] || better(e.value, pb[e.event].value, e.event)) {
+                    pb[e.event] = e;
+                }
+            });
+            let html = '<h3>Personal Bests</h3><ul>';
+            for (let event in pb) {
+                html += `<li>${event}: ${pb[event].value} (${pb[event].date})</li>`;
+            }
+            html += '</ul>';
+            statsDiv.innerHTML = html;
+            statsDiv.style.display = 'block';
+        }
+
+        function better(newVal, oldVal, event) {
+            const numNew = parseFloat(newVal);
+            const numOld = parseFloat(oldVal);
+            return event.includes('m') ? numNew > numOld : numNew < numOld;
+        }
+
+        function deleteEntry(index) {
+            entries.splice(index, 1);
+            saveEntries();
+            renderEntries();
+        }
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const entry = {
+                date: document.getElementById('date').value,
+                event: document.getElementById('event').value,
+                value: document.getElementById('value').value,
+                notes: document.getElementById('notes').value
+            };
+            entries.unshift(entry);
+            saveEntries();
+            renderEntries();
+            form.reset();
+        });
+
+        renderEntries();  // Load on start
+    </script>
+</body>
+</html>

@@ -3,56 +3,178 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Track Tracker</title>
+    <title>Track & Jump Tracker</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
-        input, select, button { padding: 8px; font-size: 16px; }
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background: #f5f5f5;
+        }
+        h1 { color: #333; text-align: center; }
+        form { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 10px; 
+            margin-bottom: 20px; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        input, select, textarea, button { 
+            padding: 12px; 
+            font-size: 16px; 
+            border: 1px solid #ddd; 
+            border-radius: 4px;
+        }
+        button { 
+            background: #007bff; 
+            color: white; 
+            cursor: pointer; 
+            font-weight: bold;
+        }
+        button:hover { background: #0056b3; }
         ul { list-style: none; padding: 0; }
-        li { border: 1px solid #ddd; margin: 5px 0; padding: 10px; border-radius: 5px; }
-        .stats { background: #f0f0f0; padding: 15px; margin-top: 20px; }
+        li { 
+            background: white; 
+            margin: 10px 0; 
+            padding: 15px; 
+            border-radius: 8px; 
+            box-shadow: 0 1px 5px rgba(0,0,0,0.1);
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+        }
+        .stats { 
+            background: #e8f4fd; 
+            padding: 20px; 
+            margin-top: 20px; 
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        #progressChart { 
+            max-height: 400px; 
+            margin: 20px 0; 
+            background: white; 
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            padding: 10px 20px; 
+            background: #28a745; 
+            color: white; 
+            border-radius: 20px; 
+            font-size: 14px;
+            display: none;
+        }
+        @media (max-width: 600px) { 
+            body { padding: 10px; } 
+            li { flex-direction: column; align-items: flex-start; gap: 10px; }
+        }
     </style>
+    <!-- Firebase v10+ Modular CDN -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+        import { getDatabase, ref, onValue, set } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+        window.firebaseExports = { initializeApp, getDatabase, ref, onValue, set };
+    </script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <h1>My Track & Jump Tracker</h1>
+    <div id="status" class="status">Synced ✅</div>
+    <h1>🏃‍♂️ Track & Jump Tracker</h1>
+    <p style="text-align: center; color: #666;">Logs sync across all your devices in real-time</p>
+    
     <form id="entryForm">
-        <input type="date" id="date" required>
+        <input type="date" id="date" required value="2026-05-08">
         <select id="event" required>
             <option value="">Select Event</option>
-            <option value="100m">100m</option>
-            <option value="200m">200m</option>
+            <option value="100m">100m (Goal: 12.0s)</option>
+            <option value="200m">200m (Goal: 25s)</option>
             <option value="Long Jump">Long Jump</option>
         </select>
-        <input type="text" id="value" placeholder="Time e.g. 13.0s or Distance e.g. 4.5m" required>
-        <textarea id="notes" placeholder="Notes (weather, etc.)"></textarea>
-        <button type="submit">Log Entry</button>
+        <input type="text" id="value" placeholder="e.g. 13.0s or 4.5m" required>
+        <textarea id="notes" placeholder="Notes: weather, conditions, how you felt..."></textarea>
+        <button type="submit">💾 Log Entry</button>
     </form>
+    
     <ul id="entries"></ul>
+    <canvas id="progressChart"></canvas>
     <div id="stats" class="stats" style="display:none;"></div>
 
     <script>
         const form = document.getElementById('entryForm');
         const entriesList = document.getElementById('entries');
         const statsDiv = document.getElementById('stats');
+        const statusDiv = document.getElementById('status');
+        let entries = [];
+        let chart;
 
-        let entries = JSON.parse(localStorage.getItem('trackEntries')) || [];
+        // Your Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyDWhov-JJ2xQBMX2JGVSHIBBYlcBz8fVW8",
+            authDomain: "track2-14f71.firebaseapp.com",
+            databaseURL: "https://track2-14f71-default-rtdb.firebaseio.com",
+            projectId: "track2-14f71",
+            storageBucket: "track2-14f71.firebasestorage.app",
+            messagingSenderId: "705635088275",
+            appId: "1:705635088275:web:1a585c9102424238725a66",
+            measurementId: "G-SKJYDF75M3"
+        };
 
-        function saveEntries() {
-            localStorage.setItem('trackEntries', JSON.stringify(entries));
-        }
+        window.addEventListener('load', async () => {
+            const { initializeApp, getDatabase, ref, onValue, set } = window.firebaseExports;
+            const app = initializeApp(firebaseConfig);
+            const db = getDatabase(app);
+            const entriesRef = ref(db, 'entries');
 
-        function renderEntries() {
-            entriesList.innerHTML = '';
-            entries.forEach((entry, index) => {
-                const li = document.createElement('li');
-                li.innerHTML = `
-                    <strong>${entry.date}</strong> - ${entry.event}: ${entry.value} 
-                    <br>${entry.notes || ''} 
-                    <button onclick="deleteEntry(${index})">Delete</button>
-                `;
-                entriesList.appendChild(li);
+            // Show online/offline status
+            window.addEventListener('online', () => statusDiv.textContent = 'Synced ✅'; statusDiv.style.display = 'block');
+            window.addEventListener('offline', () => statusDiv.textContent = 'Offline (will sync)'; statusDiv.style.background = '#ffc107');
+
+            // Real-time listener
+            onValue(entriesRef, (snapshot) => {
+                const data = snapshot.val();
+                entries = data ? Object.values(data) : [];
+                statusDiv.textContent = 'Synced ✅'; statusDiv.style.display = 'block'; statusDiv.style.background = '#28a745';
+                renderEntries();
             });
-            renderStats();
+
+            // Save function
+            window.saveEntries = () => {
+                const entriesObj = {};
+                entries.forEach((entry, index) => { entriesObj[index] = entry; });
+                set(entriesRef, entriesObj);
+            };
+
+            // Form submit
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const entry = {
+                    date: document.getElementById('date').value,
+                    event: document.getElementById('event').value,
+                    value: document.getElementById('value').value.trim(),
+                    notes: document.getElementById('notes').value.trim()
+                };
+                if (entry.value) {
+                    entries.unshift(entry);
+                    window.saveEntries();
+                    form.reset();
+                    document.getElementById('date').value = '2026-05-08';
+                }
+            });
+        });
+
+        function better(newVal, oldVal, event) {
+            const numNew = parseFloat(newVal.replace(/[^\d.]/g, ''));
+            const numOld = parseFloat(oldVal.replace(/[^\d.]/g, ''));
+            return event.includes('Jump') ? numNew > numOld : numNew < numOld;
         }
 
         function renderStats() {
@@ -62,42 +184,95 @@
                     pb[e.event] = e;
                 }
             });
-            let html = '<h3>Personal Bests</h3><ul>';
+            let html = '<h3>🏆 Personal Bests</h3><ul>';
             for (let event in pb) {
-                html += `<li>${event}: ${pb[event].value} (${pb[event].date})</li>`;
+                html += `<li><strong>${event}:</strong> ${pb[event].value} (${pb[event].date})</li>`;
             }
             html += '</ul>';
+            if (Object.keys(pb).length === 0) html = '<p>Log entries to see bests!</p>';
             statsDiv.innerHTML = html;
             statsDiv.style.display = 'block';
         }
 
-        function better(newVal, oldVal, event) {
-            const numNew = parseFloat(newVal);
-            const numOld = parseFloat(oldVal);
-            return event.includes('m') ? numNew > numOld : numNew < numOld;
+        function renderChart() {
+            const ctx = document.getElementById('progressChart').getContext('2d');
+            if (chart) chart.destroy();
+
+            const eventData = {};
+            entries.forEach(e => {
+                if (!eventData[e.event]) eventData[e.event] = [];
+                eventData[e.event].push({ date: new Date(e.date), value: parseFloat(e.value.replace(/[^\d.]/g, '')) });
+            });
+
+            // Demo data (remove after first real log)
+            if (entries.length === 0) {
+                eventData['100m'] = [
+                    { date: new Date('2026-04-01'), value: 13.5 },
+                    { date: new Date('2026-04-15'), value: 13.2 },
+                    { date: new Date('2026-05-08'), value: 13.0 }
+                ];
+                eventData['Long Jump'] = [
+                    { date: new Date('2026-04-01'), value: 4.0 },
+                    { date: new Date('2026-04-15'), value: 4.3 },
+                    { date: new Date('2026-05-08'), value: 4.5 }
+                ];
+            }
+
+            const datasets = Object.keys(eventData).map(event => {
+                const dataPoints = eventData[event].sort((a, b) => a.date - b.date);
+                return {
+                    label: event,
+                    data: dataPoints.map(d => d.value),
+                    borderColor: event === '100m' ? '#dc3545' : event === '200m' ? '#007bff' : '#28a745',
+                    backgroundColor: event === '100m' ? 'rgba(220,53,69,0.1)' : event === '200m' ? 'rgba(0,123,255,0.1)' : 'rgba(40,167,69,0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 6
+                };
+            });
+
+            const labels = datasets[0]?.data.map((_, i) => `Session ${i+1}`) || [];
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { 
+                        y: { 
+                            reverse: datasets.some(ds => !ds.label.includes('Jump')),
+                            beginAtZero: false,
+                            title: { display: true, text: 'Performance (↓ Better for Sprints, ↑ for Jump)' }
+                        },
+                        x: { title: { display: true, text: 'Time' } }
+                    },
+                    plugins: { 
+                        title: { display: true, text: '📈 Progress Over Time', font: { size: 18 } },
+                        legend: { position: 'top' }
+                    },
+                    interaction: { intersect: false, mode: 'index' }
+                }
+            });
         }
 
-        function deleteEntry(index) {
-            entries.splice(index, 1);
-            saveEntries();
-            renderEntries();
+        function renderEntries() {
+            entriesList.innerHTML = '';
+            entries.forEach((entry, index) => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <div>
+                        <strong>${entry.date} | ${entry.event}</strong><br>
+                        <span style="font-size: 24px; color: #007bff;">${entry.value}</span><br>
+                        <small>${entry.notes || 'No notes'}</small>
+                    </div>
+                    <button onclick="entries.splice(${index}, 1); window.saveEntries(); renderEntries();" 
+                            style="background: #dc3545;">🗑️ Delete</button>
+                `;
+                entriesList.appendChild(li);
+            });
+            renderStats();
+            renderChart();
         }
-
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const entry = {
-                date: document.getElementById('date').value,
-                event: document.getElementById('event').value,
-                value: document.getElementById('value').value,
-                notes: document.getElementById('notes').value
-            };
-            entries.unshift(entry);
-            saveEntries();
-            renderEntries();
-            form.reset();
-        });
-
-        renderEntries();  // Load on start
     </script>
 </body>
 </html>

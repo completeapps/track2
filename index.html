@@ -86,6 +86,15 @@
       color: #4b5563;
       border: 1px solid #e5e7eb;
     }
+    .btn-google {
+      background: #fff;
+      color: #374151;
+      border: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
     .btn-danger {
       background: #ef4444;
       color: #fff;
@@ -210,6 +219,7 @@
       .card { padding: 18px; }
       .user-bar { flex-direction: column; gap: 8px; align-items: flex-start; }
       .btn-row { flex-direction: column; }
+      .btn-google { justify-content: center; }
     }
   </style>
 
@@ -221,7 +231,9 @@
       createUserWithEmailAndPassword,
       signInWithEmailAndPassword,
       signOut,
-      onAuthStateChanged
+      onAuthStateChanged,
+      GoogleAuthProvider,
+      signInWithPopup
     } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
     import {
       getDatabase,
@@ -229,7 +241,6 @@
       onValue,
       set
     } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
-
     import 'https://cdn.jsdelivr.net/npm/chart.js';  // Chart.js global [web:49]
 
     const firebaseConfig = {
@@ -243,9 +254,10 @@
       measurementId: "G-SKJYDF75M3"
     };
 
-    const app = initializeApp(firebaseConfig);       // [web:50]
-    const auth = getAuth(app);                       // [web:50]
-    const db = getDatabase(app);                     // [web:41]
+    const app = initializeApp(firebaseConfig);        // [web:50]
+    const auth = getAuth(app);                        // [web:50]
+    const db = getDatabase(app);                      // [web:41]
+    const googleProvider = new GoogleAuthProvider();  // [web:61]
 
     // DOM
     const authScreen   = document.getElementById('authScreen');
@@ -258,6 +270,7 @@
 
     const btnSignUp    = document.getElementById('btnSignUp');
     const btnSignIn    = document.getElementById('btnSignIn');
+    const btnGoogle    = document.getElementById('btnGoogle');
     const btnLogout    = document.getElementById('btnLogout');
 
     const entryForm    = document.getElementById('entryForm');
@@ -280,7 +293,7 @@
       syncStatus.style.background = color;
     }
 
-    // Auth buttons
+    // Email/password buttons
     btnSignUp.addEventListener('click', async () => {
       authError.textContent = '';
       try {
@@ -294,6 +307,16 @@
       authError.textContent = '';
       try {
         await signInWithEmailAndPassword(auth, authEmail.value, authPassword.value);
+      } catch (err) {
+        authError.textContent = err.message;
+      }
+    });
+
+    // Google sign-in button
+    btnGoogle.addEventListener('click', async () => {
+      authError.textContent = '';
+      try {
+        await signInWithPopup(auth, googleProvider);  // opens Google popup [web:61]
       } catch (err) {
         authError.textContent = err.message;
       }
@@ -470,7 +493,7 @@
 </head>
 <body>
   <h1>Track & Jump Tracker</h1>
-  <p class="tagline">Accounts + synced data + progress charts for you and your friends</p>
+  <p class="tagline">Email or Google login • Personal data • Progress charts</p>
 
   <!-- AUTH CARD -->
   <div id="authScreen" class="card auth-card">
@@ -485,6 +508,11 @@
     <div class="btn-row">
       <button class="btn btn-primary" id="btnSignUp">Create account</button>
       <button class="btn btn-outline" id="btnSignIn">Sign in</button>
+    </div>
+    <div class="btn-row" style="margin-top:10px;">
+      <button class="btn btn-google" id="btnGoogle">
+        <span>🔑</span> <span>Sign in with Google</span>
+      </button>
     </div>
     <p class="small-text">
       Share this URL with your friends. Each account only sees their own data.
